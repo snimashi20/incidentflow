@@ -21,6 +21,9 @@ async def _log_activity(db: AsyncSession, incident_id: int, user: User, message:
 
 
 async def _get_incident_or_404(db: AsyncSession, incident_id: int) -> Incident:
+    # populate_existing forces relationships to be reloaded even if this Incident
+    # is already in the session's identity map with stale collections - which it
+    # is, since every route re-fetches after mutating within the same request/session.
     result = await db.execute(
         select(Incident)
         .options(
@@ -29,6 +32,7 @@ async def _get_incident_or_404(db: AsyncSession, incident_id: int) -> Incident:
             selectinload(Incident.participants).selectinload(IncidentParticipant.user),
         )
         .where(Incident.id == incident_id)
+        .execution_options(populate_existing=True)
     )
     incident = result.scalar_one_or_none()
     if incident is None:

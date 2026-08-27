@@ -1,20 +1,38 @@
-# Python
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
 *.egg-info/
+*.egg
+
+# Virtual environments
 .venv/
 venv/
+env/
+ENV/
+
+# Testing / linting caches
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
 # Node
 node_modules/
-dist/
 .vite/
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
 
-# Env
+# Env files (never commit real secrets)
 .env
 .env.local
+.envrc
 
 # Docker
 *.log
