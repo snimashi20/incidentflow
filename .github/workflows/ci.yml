@@ -1,0 +1,69 @@
+# GitHub Actions CI pipeline. This file defines what runs automatically every
+# time someone pushes to main or opens a pull request against it - the
+# "Actions" tab on GitHub shows the results. Each "job" below runs in its own
+# fresh virtual machine, in parallel, unless one depends on another via `needs`.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Restores backend dependencies and runs the xUnit test suite (see
+  # backend/IncidentFlow.Api.Tests/).
+  backend-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4  # pulls the repo's code onto the runner
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore dependencies
+        run: dotnet restore IncidentFlow.Api.Tests/IncidentFlow.Api.Tests.csproj
+
+      - name: Run tests
+        run: dotnet test IncidentFlow.Api.Tests/IncidentFlow.Api.Tests.csproj --no-restore --verbosity normal
+
+  # Type-checks and builds the frontend - catches TypeScript errors and
+  # broken imports before they ever reach a real deployment.
+  frontend-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package.json
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Type-check and build
+        run: npm run build
+
+  # Confirms both Dockerfiles still build successfully. Only runs after the
+  # two jobs above pass (`needs: [...]`), so we don't waste time building
+  # images for code that's already known to be broken.
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build -t incidentflow-backend ./backend
+
+      - name: Build frontend image
+        run: docker build -t incidentflow-frontend ./frontend

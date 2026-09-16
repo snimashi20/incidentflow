@@ -1,0 +1,109 @@
+# Docker Compose describes a group of containers that should run together as
+# one application, and how they're networked/configured. Running
+# `docker compose up` builds and starts all four services below at once -
+# each one runs in its own isolated container but they can talk to each other
+# by service name (e.g. the backend connects to "postgres:5432", not
+# "localhost:5432" - Compose sets up a private network where each service
+# name resolves to that container's address).
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      # ${VAR:-default} syntax: use the VAR from the shell/.env file if it's
+      # set, otherwise fall back to the value after the colon.
+      POSTGRES_USER: ${POSTGRES_USER:-incidentflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-incidentflow}
+      POSTGRES_DB: ${POSTGRES_DB:-incidentflow}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # Without this, all data would live inside the container and disappear
+      # every time it's recreated. A named volume persists on the host
+      # machine's disk across `docker compose down`/`up` cycles.
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # Docker Compose uses this to know when Postgres is actually ready to
+      # accept connections, not just "the container started" - see
+      # `depends_on: condition: service_healthy` on the backend below.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-incidentflow}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend  # builds backend/Dockerfile
+    env_file:
+      - .env
+    environment:
+      # These override anything from .env, and use "postgres"/"redis" (the
+      # service names above) as hostnames instead of localhost - that only
+      # works for container-to-container traffic inside this compose network.
+      #
+      # ASP.NET Core reads nested configuration keys from environment
+      # variables using a double-underscore separator - e.g.
+      # ConnectionStrings__Postgres below becomes configuration key
+      # "ConnectionStrings:Postgres" inside the app (see
+      # backend/IncidentFlow.Api/appsettings.json for the same keys' local,
+      # non-Docker defaults).
+      ConnectionStrings__Postgres: ${POSTGRES_CONNECTION_STRING:-Host=postgres;Port=5432;Database=incidentflow;Username=incidentflow;Password=incidentflow}
+      ConnectionStrings__Redis: ${REDIS_CONNECTION_STRING:-redis:6379}
+      Jwt__Secret: ${JWT_SECRET:-dev-secret-change-me}
+      Jwt__AccessTokenExpireMinutes: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
+      Cors__Origins: ${CORS_ORIGINS:-http://localhost:5173}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      # Bind-mounts the local backend/ folder into the container, so editing
+      # a C# file on your machine is instantly visible inside the container -
+      # combined with the Dockerfile's `dotnet watch` command, this is what
+      # makes local development fast without rebuilding the image each time.
+      - ./backend:/app
+      # Without these two lines, the bind-mount above would hide the
+      # restored NuGet packages and build output that were generated *inside*
+      # the container during the build, replacing them with your local
+      # (likely missing, or wrong-OS) ones - the same reason frontend's
+      # node_modules gets its own volume below.
+      - backend_obj:/app/IncidentFlow.Api/obj
+      - backend_bin:/app/IncidentFlow.Api/bin
+    depends_on:
+      # Waits for Postgres/Redis to report healthy (see healthcheck above)
+      # before starting the backend, so it doesn't crash trying to connect
+      # to a database that isn't ready yet.
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend  # builds frontend/Dockerfile
+    env_file:
+      - .env
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+      VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:8000}
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      - ./frontend:/app
+      # Without this line, the bind-mount above would hide the node_modules
+      # folder that was installed *inside* the container during the build,
+      # replacing it with your (likely empty, or wrong-OS) local one. This
+      # extra anonymous volume keeps the container's own node_modules in place.
+      - /app/node_modules
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  backend_obj:
+  backend_bin:

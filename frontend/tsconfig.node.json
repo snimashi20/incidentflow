@@ -1,0 +1,17 @@
+{
+  // A separate, smaller TypeScript config just for vite.config.ts itself,
+  // since that file runs directly under Node (as part of the build tool),
+  // not in the browser like the rest of src/ - so it doesn't need DOM types.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "composite": true, // required for this config to be referenced by the main tsconfig.json
+    "noEmit": false
+  },
+  "include": ["vite.config.ts"]
+}

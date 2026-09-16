@@ -1,0 +1,31 @@
+# .NET build output
+backend/**/bin/
+backend/**/obj/
+*.user
+
+# Test results
+backend/**/TestResults/
+
+# Node
+node_modules/
+.vite/
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+frontend/dist/
+
+# Env files (never commit real secrets)
+.env
+.env.local
+.envrc
+
+# Docker
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

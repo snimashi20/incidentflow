@@ -1,0 +1,26 @@
+{
+  // TypeScript compiler settings for our actual app code (everything in src/).
+  // vite.config.ts is configured separately in tsconfig.node.json, since it
+  // runs in Node rather than the browser.
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"], // "DOM" gives us types for browser APIs like WebSocket, fetch, localStorage
+    "module": "ESNext",
+    "skipLibCheck": true,
+
+    "moduleResolution": "bundler", // matches how Vite actually resolves imports
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true, // Vite (not tsc) compiles the code - tsc here is only used for type-checking
+    "jsx": "react-jsx", // lets .tsx files use JSX without importing React in every file
+
+    "strict": true, // enables all of TypeScript's strictest type-checking rules
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src"],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}
