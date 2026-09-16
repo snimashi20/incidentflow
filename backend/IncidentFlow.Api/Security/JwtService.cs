@@ -34,7 +34,12 @@ public class JwtService(AppOptions options)
     {
         if (string.IsNullOrEmpty(token)) return null;
 
-        var handler = new JwtSecurityTokenHandler();
+        // By default JwtSecurityTokenHandler remaps short claim names like
+        // "sub" to legacy long-form claim type URIs when reading a validated
+        // token back out, so FindFirstValue(JwtRegisteredClaimNames.Sub)
+        // would silently return null even for a perfectly valid token.
+        // Disabling that keeps the claim type exactly as we wrote it.
+        var handler = new JwtSecurityTokenHandler { MapInboundClaims = false };
         var validationParameters = new TokenValidationParameters
         {
             ValidateIssuer = false,
