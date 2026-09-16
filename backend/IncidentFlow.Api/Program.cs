@@ -24,7 +24,7 @@ var appOptions = new AppOptions
     PostgresConnectionString = builder.Configuration.GetConnectionString("Postgres")
         ?? "Host=localhost;Port=5432;Database=incidentflow;Username=incidentflow;Password=incidentflow",
     RedisConnectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379",
-    JwtSecret = builder.Configuration["Jwt:Secret"] ?? "dev-secret-change-me",
+    JwtSecret = builder.Configuration["Jwt:Secret"] ?? "dev-secret-change-me-to-a-long-random-string",
     AccessTokenExpireMinutes = int.TryParse(builder.Configuration["Jwt:AccessTokenExpireMinutes"], out var minutes)
         ? minutes
         : 1440,

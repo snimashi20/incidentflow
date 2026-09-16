@@ -11,7 +11,9 @@ public class AppOptions
 
     // Secret key used to sign/verify JWT login tokens. Never commit a real
     // secret to git - the default in appsettings.json is only for local dev.
-    public string JwtSecret { get; init; } = "dev-secret-change-me";
+    // HMAC-SHA256 requires a key of at least 256 bits (32 bytes), so this
+    // must stay at least that long or token creation throws at runtime.
+    public string JwtSecret { get; init; } = "dev-secret-change-me-to-a-long-random-string";
 
     // How long a login token stays valid, in minutes (default: 24h).
     public int AccessTokenExpireMinutes { get; init; } = 1440;

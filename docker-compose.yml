@@ -57,7 +57,7 @@ services:
       # non-Docker defaults).
       ConnectionStrings__Postgres: ${POSTGRES_CONNECTION_STRING:-Host=postgres;Port=5432;Database=incidentflow;Username=incidentflow;Password=incidentflow}
       ConnectionStrings__Redis: ${REDIS_CONNECTION_STRING:-redis:6379}
-      Jwt__Secret: ${JWT_SECRET:-dev-secret-change-me}
+      Jwt__Secret: ${JWT_SECRET:-dev-secret-change-me-to-a-long-random-string}
       Jwt__AccessTokenExpireMinutes: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
       Cors__Origins: ${CORS_ORIGINS:-http://localhost:5173}
     ports:
