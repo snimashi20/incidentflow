@@ -15,6 +15,7 @@ using System.Text.Json;
 using IncidentFlow.Api.Common;
 using IncidentFlow.Api.Data;
 using IncidentFlow.Api.Realtime;
+using IncidentFlow.Api.Security;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -41,6 +42,12 @@ public abstract class IntegrationTestBase : IAsyncLifetime
 
     protected WebApplicationFactory<Program> Factory => _factory;
 
+    // Whether this test class wants the 75 demo employees from
+    // Data/SeedData.cs in its database. Off for almost every test (see
+    // below); SeedDataTests overrides it to `true` because checking the
+    // seeded company is the entire point of that class.
+    protected virtual bool SeedDemoEmployees => false;
+
     public async Task InitializeAsync()
     {
         // A single open SQLite connection to ":memory:", kept alive for the
@@ -52,6 +59,13 @@ public abstract class IntegrationTestBase : IAsyncLifetime
 
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
+            // By default, skip the 75 demo employees from Data/SeedData.cs.
+            // The real departments ARE still seeded (the app needs them,
+            // and tests need one to register against), but a test that
+            // asserts on "the list of users" should see only the users it
+            // created itself.
+            builder.UseSetting("Seed:DemoEmployees", SeedDemoEmployees ? "true" : "false");
+
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<DbContextOptions<AppDbContext>>();
@@ -66,6 +80,13 @@ public abstract class IntegrationTestBase : IAsyncLifetime
 
                 services.RemoveAll<IEventPublisher>();
                 services.AddSingleton<IEventPublisher, LocalEventPublisher>();
+
+                // WebSocket tickets normally live in Redis, which isn't
+                // running here either. The in-memory store keeps the same
+                // contract - 30 second lifetime, single use - just scoped to
+                // this one process. See Security/WebSocketTicketStore.cs.
+                services.RemoveAll<IWebSocketTicketStore>();
+                services.AddSingleton<IWebSocketTicketStore, InMemoryWebSocketTicketStore>();
             });
         });
 
@@ -79,24 +100,59 @@ public abstract class IntegrationTestBase : IAsyncLifetime
         await _connection.DisposeAsync();
     }
 
+    // Opening a WebSocket needs a short-lived ticket rather than the access
+    // token (see Security/WebSocketTicketStore.cs for why). This does what
+    // the frontend does: ask for one with the token in a header, and hand
+    // back the throwaway credential that goes in the socket URL.
+    protected async Task<string> WebSocketTicketAsync(string token)
+    {
+        using var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+        var response = await client.PostAsync("/api/auth/ws-ticket", null);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(Json);
+        return body.GetProperty("ticket").GetString()!;
+    }
+
+    // Every user must belong to a department, so tests need a real
+    // department id to register against. The departments themselves are
+    // always seeded (see Data/DatabaseSeeder.cs), so we just ask the API
+    // for the first one.
+    protected async Task<int> FirstDepartmentIdAsync()
+    {
+        var response = await Client.GetAsync("/api/departments");
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(Json);
+        return body[0].GetProperty("id").GetInt32();
+    }
+
     // Shortcut helper: registers a new user and logs them in, returning the
     // access token ready to attach to any authenticated request. Saves every
     // test from repeating the same two calls.
+    // `seniority` is null for the overwhelming majority of tests, which just
+    // need "some logged-in user" and get the registration default (MID).
+    // Tests about who is allowed to see what pass an explicit level instead,
+    // since that is exactly what the rule in Common/IncidentAccess.cs reads.
     protected async Task<string> RegisterAndLoginAsync(
-        string email, string name = "Test User", string password = "supersecret123"
+        string email, string name = "Test User", string password = "supersecret123", string? seniority = null
     )
     {
-        await Client.PostAsJsonAsync("/api/auth/register", new { email, name, password }, Json);
+        var departmentId = await FirstDepartmentIdAsync();
+        await Client.PostAsJsonAsync(
+            "/api/auth/register",
+            new { email, name, password, department_id = departmentId, seniority },
+            Json
+        );
         var response = await Client.PostAsJsonAsync("/api/auth/login", new { email, password }, Json);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(Json);
         return body.GetProperty("access_token").GetString()!;
     }
 
     protected async Task<HttpClient> AuthenticatedClientAsync(
-        string email, string name = "Test User", string password = "supersecret123"
+        string email, string name = "Test User", string password = "supersecret123", string? seniority = null
     )
     {
-        var token = await RegisterAndLoginAsync(email, name, password);
+        var token = await RegisterAndLoginAsync(email, name, password, seniority);
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
         return client;

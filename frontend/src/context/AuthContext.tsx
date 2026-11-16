@@ -11,7 +11,7 @@ interface AuthContextValue {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, name: string, password: string) => Promise<void>;
+  register: (input: authApi.RegisterInput) => Promise<void>;
   logout: () => void;
 }
 
@@ -46,11 +46,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(await authApi.me());
   }
 
-  async function register(email: string, name: string, password: string) {
-    await authApi.register(email, name, password);
+  async function register(input: authApi.RegisterInput) {
+    await authApi.register(input);
     // Registering doesn't log you in by itself - immediately follow up with
     // a normal login so the new user lands straight in the app.
-    await login(email, password);
+    await login(input.email, input.password);
   }
 
   function logout() {

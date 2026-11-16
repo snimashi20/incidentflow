@@ -4,24 +4,50 @@ using StackExchange.Redis;
 
 namespace IncidentFlow.Api.Realtime;
 
-// The production implementation of IEventPublisher: doesn't touch any
-// WebSocket directly, it just drops the event onto this incident's Redis
-// channel. RedisListenerBackgroundService is what actually picks it back up
-// and forwards it to connected browsers.
-//
-// Why go through Redis instead of just calling IncidentSocketManager
-// directly? Because if you ever run more than one backend replica (e.g.
-// behind a load balancer), each replica only knows about the WebSocket
-// connections attached to IT. Redis Pub/Sub is a shared message bus every
-// replica listens to, so an event published by replica A still reaches a
-// browser connected to replica B.
-public class RedisEventPublisher(IConnectionMultiplexer redis) : IEventPublisher
+// Publishes an event to the incident's Redis channel. Every backend replica
+// is subscribed (see RedisListenerBackgroundService), so this is what lets a
+// change made on server A reach a browser connected to server B.
+public class RedisEventPublisher(
+    IConnectionMultiplexer redis,
+    ILogger<RedisEventPublisher> logger
+) : IEventPublisher
 {
-    public Task PublishEventAsync(int incidentId, string eventType, object data)
+    public async Task PublishEventAsync(int incidentId, string eventType, object data)
     {
         var message = JsonSerializer.Serialize(new { type = eventType, data }, JsonConfig.Options);
-        return redis.GetSubscriber().PublishAsync(
-            RedisChannel.Literal(RedisChannels.ForIncident(incidentId)), message
-        );
+
+        // A failed publish is logged and swallowed, never thrown.
+        //
+        // This matters because of WHEN publishing happens: every caller
+        // commits its database transaction first and publishes afterwards.
+        // By the time we get here the write has already succeeded and is
+        // permanent. Letting a Redis timeout bubble up from here would hand
+        // the user a 500 for an operation that worked perfectly - they would
+        // reasonably retry it, and create a second incident.
+        //
+        // The cost of swallowing it is a live update that some browsers miss,
+        // which is a far smaller problem, and one the client already recovers
+        // from: the frontend re-fetches the incident whenever its socket
+        // reconnects (see useIncidentSocket.ts).
+        //
+        // The proper fix for not losing events at all is a transactional
+        // outbox - write the event into the same database transaction as the
+        // change, and have a separate worker deliver it - which is a bigger
+        // change than this project needs today.
+        try
+        {
+            await redis.GetSubscriber().PublishAsync(
+                RedisChannel.Literal(RedisChannels.ForIncident(incidentId)), message
+            );
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                ex,
+                "Could not publish {EventType} for incident {IncidentId}. The database change was saved; "
+                    + "connected clients will not see it until they reconnect.",
+                eventType, incidentId
+            );
+        }
     }
 }

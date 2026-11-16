@@ -10,10 +10,10 @@ public class TaskEndpointsTests : IntegrationTestBase
 {
     // Small helper so every test below doesn't have to repeat the same
     // "create an incident first" boilerplate.
-    private static async Task<int> CreateIncidentAsync(HttpClient client)
+    private async Task<int> CreateIncidentAsync(HttpClient client)
     {
         var response = await client.PostAsJsonAsync(
-            "/api/incidents", new { title = "API down", description = "", severity = "HIGH" }, Json
+            "/api/incidents", new { title = "API down", description = "", severity = "HIGH", department_id = await FirstDepartmentIdAsync() }, Json
         );
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(Json);
         return body.GetProperty("id").GetInt32();
@@ -82,12 +82,27 @@ public class TaskEndpointsTests : IntegrationTestBase
             .First(u => u.GetProperty("email").GetString() == "assignee@example.com")
             .GetProperty("id").GetInt32();
 
-        var response = await assigneeClient.PatchAsJsonAsync(
+        // The ASSIGNER hands the work out - which is both how it happens in
+        // the UI and the only way it is allowed now.
+        //
+        // This used to be sent as the assignee, who at that point was not on
+        // the incident at all. That worked only because the task endpoints
+        // did not check visibility: it let somebody with no connection to an
+        // incident assign themselves work on it, and thereby grant themselves
+        // access to it. See RequireVisibleIncidentAsync in TaskEndpoints.cs.
+        var response = await assignerClient.PatchAsJsonAsync(
             $"/api/tasks/{taskId}", new { assigned_to = assigneeId }, Json
         );
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(Json);
         Assert.Equal(assigneeId, body.GetProperty("assigned_to").GetInt32());
+
+        // And now that they hold the task, the assignee can work on it
+        // themselves - being given a task is what grants the access.
+        var assigneeUpdate = await assigneeClient.PatchAsJsonAsync(
+            $"/api/tasks/{taskId}", new { status = "IN_PROGRESS" }, Json
+        );
+        Assert.Equal(HttpStatusCode.OK, assigneeUpdate.StatusCode);
     }
 }

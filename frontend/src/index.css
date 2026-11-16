@@ -45,6 +45,28 @@ button.secondary {
   color: var(--text);
 }
 
+/* Destructive actions (currently just "delete incident"). It is deliberately
+   quiet until you hover it: a delete button sitting next to every row should
+   not shout for attention, but it must be unmistakably red once you reach
+   for it, so nobody clicks it thinking it is an ordinary action. */
+button.danger {
+  background: transparent;
+  border: 1px solid #6b2b2b;
+  color: #ff9b9b;
+}
+
+button.danger:hover {
+  background: #3a1d1d;
+  border-color: #8a3a3a;
+}
+
+/* For buttons sitting inline with badges, where a full-size button would
+   make the whole row taller. */
+button.small {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.8rem;
+}
+
 input,
 textarea,
 select {
@@ -100,7 +122,10 @@ a {
 }
 
 .page-body {
-  max-width: 900px;
+  /* How wide the content area may grow before it stops and centres itself.
+     900px was too tight for the two-column detail view, so long task titles
+     got squeezed into a narrow strip. */
+  max-width: 1140px;
   margin: 0 auto;
   padding: 1.5rem 2rem;
   display: flex;
@@ -183,16 +208,56 @@ a {
   color: var(--text);
 }
 
+/* The clickable part of an incident row. It's now a link sitting INSIDE the
+   card rather than being the card itself, so the delete button next to it
+   isn't nested in a link. flex: 1 makes it take all the leftover width, and
+   min-width: 0 lets it shrink - without that, a long title would refuse to
+   wrap and push the badges off the edge. */
+.incident-row-main {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+}
+
+.incident-row-main p {
+  margin: 0.25rem 0 0;
+}
+
 .incident-row-badges {
   display: flex;
   gap: 0.5rem;
   flex-shrink: 0;
+  align-items: center;
 }
 
 .incident-title-row {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  gap: 1rem;
+}
+
+/* "Join incident" and "Delete" sit side by side in the detail page header. */
+.incident-title-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+/* Shown in place of the "Join incident" button once you're a participant.
+   It deliberately reuses the green of .badge-resolved so it reads as a
+   calm statement of fact, and it is NOT styled as a button - there is
+   nothing to click, and making it look clickable would invite people to
+   press it expecting something to happen. */
+.joined-label {
+  background: #1d3a2a;
+  color: #7be0a3;
+  border-radius: 999px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .status-actions {
@@ -204,14 +269,18 @@ a {
 /* Tasks + Team Activity side by side on wide screens... */
 .detail-columns {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* minmax(0, ...) is the important bit: without it, a grid column refuses to
+     shrink below the width of its widest child (here the long "assign to"
+     dropdown), which blows the layout out. The 1.15fr gives Tasks a little
+     more room than the activity feed, since task rows hold more. */
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr);
   gap: 1rem;
 }
 
 /* ...but stacked into a single column on narrow/mobile screens. */
-@media (max-width: 720px) {
+@media (max-width: 900px) {
   .detail-columns {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -230,14 +299,54 @@ a {
   gap: 0.5rem;
 }
 
+/* The little circle/check to the left of each task. It is a real button -
+   clicking it cycles the task's status - so it needs to be comfortably
+   bigger than the surrounding text to be an easy click target. */
 .task-status-btn {
   background: transparent;
   padding: 0.25rem;
   font-size: 1rem;
+  line-height: 1;
+  flex-shrink: 0; /* stops the icon being squashed when a task title is long */
 }
 
+.task-status-btn:hover .task-status-icon {
+  opacity: 0.75; /* small hint that the icon is clickable */
+}
+
+/* The icon glyph itself (○ ◉ ☑ - see components/Badges.tsx). Sized here
+   rather than on the button so the glyph can grow without also growing the
+   button's padding. */
+.task-status-icon {
+  display: inline-block;
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+/* One color per status: grey while nobody has started, green once work is
+   under way, and grey again when it's finished (the task title is already
+   struck through at that point, so done items deliberately fade back). */
+.task-status-todo { color: var(--muted); }
+.task-status-in-progress { color: #7be0a3; } /* same green as the RESOLVED badge */
+.task-status-done { color: var(--muted); }
+
 .task-title {
-  flex: 1;
+  /* Take all the leftover space in the row. min-width: 0 lets this shrink
+     below its natural text width instead of pushing the row wider, and
+     overflow-wrap breaks a very long unbroken word instead of overflowing. */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The "assign this task to someone" dropdown. A <select> is as wide as its
+   longest <option> by default - here a full "Name - Job Title" line - and that
+   is what was crushing the task title. Pinning a sensible width keeps the row
+   balanced; a long selected name is simply truncated by the browser. */
+.task-row select {
+  flex: 0 1 15rem;
+  min-width: 0;
+  max-width: 45%;
 }
 
 .task-title.done {
@@ -277,4 +386,191 @@ a {
 
 .activity-time {
   font-size: 0.75rem;
+}
+
+/* ---- Tier 1 feature styles -------------------------------------------- */
+
+/* Three columns (Tasks / Discussion / Team Activity) is a lot for a laptop
+   screen, so drop to two in the middle range. The min-width half of this
+   query matters: without it this rule would also match phone widths and
+   override the single-column rule above, since it comes later in the file. */
+@media (max-width: 1200px) and (min-width: 901px) {
+  .detail-columns {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+/* ---- Filter bar (incidents list) ---- */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.filter-search {
+  /* Takes the leftover space, so the search box grows and the dropdowns
+     stay their natural size. */
+  flex: 1 1 14rem;
+  min-width: 10rem;
+}
+
+.filter-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.filter-checkbox input {
+  width: auto;
+  margin: 0;
+}
+
+.incident-row-department {
+  font-size: 0.75rem;
+}
+
+/* ---- SLA badges ---- */
+/* Counting down: quiet, because an incident inside its budget is normal. */
+.badge-sla-counting { background: #1d2a3a; color: #7bb6e0; }
+/* Acknowledged in time: the same green as RESOLVED, since it is good news. */
+.badge-sla-met { background: #1d3a2a; color: #7be0a3; }
+/* Breached: the loudest thing on the page, deliberately. */
+.badge-sla-breached {
+  background: #4a1414;
+  color: #ff9b9b;
+  /* A border as well as a fill, so it still reads as urgent for anyone who
+     cannot easily tell these reds from the other warm badge colors. */
+  border: 1px solid #ff9b9b;
+}
+
+.badge-department { background: #22262f; color: var(--muted); }
+
+/* ---- Presence ("who is here") ---- */
+.presence-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+/* The small green dot that says "this is live". */
+.presence-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #7be0a3;
+  /* A soft glow, so it reads as "connected" rather than as a stray pixel. */
+  box-shadow: 0 0 6px #7be0a3;
+}
+
+.presence-names {
+  color: var(--muted);
+  font-size: 0.75rem;
+  /* Long lists of names would push the layout around, so clip rather than
+     wrap - the full list is in the element's title tooltip either way. */
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Incident Commander ---- */
+.commander-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.commander-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.commander-row select {
+  max-width: 18rem;
+}
+
+/* ---- Comments ---- */
+.comment-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.comment {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.5rem;
+}
+
+.comment-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.comment-author {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.comment-time {
+  font-size: 0.75rem;
+}
+
+.comment-body {
+  margin: 0;
+  font-size: 0.9rem;
+  /* Keeps the line breaks somebody typed, and wraps long pasted strings
+     (a stack trace, a URL) instead of letting them stretch the column. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* A button that looks like a link - for the small "delete" next to your own
+   comment, which shouldn't shout as loudly as a real button. */
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-decoration: underline;
+  /* Pushes it to the far right of the comment header. */
+  margin-left: auto;
+}
+
+.link-button:hover {
+  color: #ff9b9b;
+}
+
+.add-comment-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  align-items: flex-start;
+}
+
+.add-comment-form textarea {
+  flex: 1;
+  resize: vertical;
 }
