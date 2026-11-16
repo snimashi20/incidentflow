@@ -60,6 +60,21 @@ services:
       Jwt__Secret: ${JWT_SECRET:-dev-secret-change-me-to-a-long-random-string}
       Jwt__AccessTokenExpireMinutes: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
       Cors__Origins: ${CORS_ORIGINS:-http://localhost:5173}
+      # Whether to insert the 75 demo employees from
+      # backend/IncidentFlow.Api/Data/SeedData.cs on startup. They all share
+      # one well-known password, so set this to false for anything that is
+      # not a throwaway local database. The 14 departments are seeded either
+      # way - the app needs them to work at all.
+      Seed__DemoEmployees: ${SEED_DEMO_EMPLOYEES:-true}
+      # Makes `dotnet watch` poll the filesystem on a timer instead of waiting
+      # for OS file-change notifications. Needed for the same reason as the
+      # frontend's server.watch.usePolling (see frontend/vite.config.ts):
+      # the source is bind-mounted from Windows into a Linux container, and
+      # inotify events don't cross that boundary. Without this, `dotnet watch`
+      # never notices your edits, so the API silently keeps running the code
+      # it started with - a new endpoint just returns 405 until you manually
+      # restart the container.
+      DOTNET_USE_POLLING_FILE_WATCHER: "true"
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:

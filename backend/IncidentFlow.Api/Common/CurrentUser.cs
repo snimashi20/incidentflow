@@ -34,16 +34,28 @@ public static class CurrentUser
         return user;
     }
 
-    // Same idea, but for WebSocket connections. Browsers can't attach custom
-    // headers during the WebSocket handshake, so the frontend passes the
-    // token as a query string parameter instead (see Program.cs's WebSocket
-    // route). Returns null instead of throwing so the caller can decide how
-    // to close the connection.
-    public static async Task<User?> FromWebSocketQueryAsync(HttpContext context, AppDbContext db, JwtService jwt)
+    // Same idea, but for WebSocket connections.
+    //
+    // Browsers can't attach custom headers during a WebSocket handshake, so
+    // something has to travel in the URL. That something is a ticket, NOT
+    // the access token: a URL ends up in access logs, proxy logs and browser
+    // history, and a day-long token has no business being in any of them.
+    // The ticket is random, expires in 30 seconds and works exactly once -
+    // see Security/WebSocketTicketStore.cs.
+    //
+    // Returns null instead of throwing so the caller can decide how to close
+    // the connection.
+    public static async Task<User?> FromWebSocketTicketAsync(
+        HttpContext context, AppDbContext db, IWebSocketTicketStore tickets
+    )
     {
-        var token = context.Request.Query["token"].ToString();
-        var email = jwt.ValidateAndGetEmail(token);
+        var ticket = context.Request.Query["ticket"].ToString();
+
+        // Redeeming destroys the ticket, so this is also what stops the same
+        // URL being replayed from a log file.
+        var email = await tickets.RedeemAsync(ticket);
         if (email is null) return null;
+
         return await FindByEmailAsync(db, email);
     }
 }

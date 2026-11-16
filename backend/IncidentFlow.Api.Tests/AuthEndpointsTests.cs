@@ -14,9 +14,19 @@ public class AuthEndpointsTests : IntegrationTestBase
     [Fact]
     public async Task Register_CreatesUser()
     {
+        var departmentId = await FirstDepartmentIdAsync();
+
         var response = await Client.PostAsJsonAsync(
             "/api/auth/register",
-            new { email = "alice@example.com", name = "Alice", password = "supersecret123" },
+            new
+            {
+                email = "alice@example.com",
+                name = "Alice",
+                password = "supersecret123",
+                department_id = departmentId,
+                job_title = "Senior Site Reliability Engineer",
+                seniority = "SENIOR",
+            },
             Json
         );
 
@@ -25,12 +35,81 @@ public class AuthEndpointsTests : IntegrationTestBase
         Assert.Equal("alice@example.com", body.GetProperty("email").GetString());
         // Confirms the response never leaks the password hash back to the client.
         Assert.False(body.TryGetProperty("hashed_password", out _));
+        // ...and that the new account really is attached to a department.
+        Assert.Equal(departmentId, body.GetProperty("department").GetProperty("id").GetInt32());
+        Assert.Equal("Senior Site Reliability Engineer", body.GetProperty("job_title").GetString());
+        Assert.Equal("SENIOR", body.GetProperty("seniority").GetString());
+    }
+
+    [Fact]
+    public async Task Register_DefaultsToMidLevel_WhenNoneGiven()
+    {
+        var response = await Client.PostAsJsonAsync(
+            "/api/auth/register",
+            new
+            {
+                email = "unspecified@example.com",
+                name = "Unspecified Level",
+                password = "supersecret123",
+                department_id = await FirstDepartmentIdAsync(),
+            },
+            Json
+        );
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(Json);
+        Assert.Equal("MID", body.GetProperty("seniority").GetString());
+    }
+
+    [Fact]
+    public async Task Register_WithUnknownSeniority_Rejected()
+    {
+        var response = await Client.PostAsJsonAsync(
+            "/api/auth/register",
+            new
+            {
+                email = "overpromoted@example.com",
+                name = "Over Promoted",
+                password = "supersecret123",
+                department_id = await FirstDepartmentIdAsync(),
+                seniority = "SUPREME_LEADER",
+            },
+            Json
+        );
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Register_WithoutValidDepartment_Rejected()
+    {
+        // 999999 is an id no department could have - every employee must
+        // belong to a real department, so this must not create an account.
+        var response = await Client.PostAsJsonAsync(
+            "/api/auth/register",
+            new
+            {
+                email = "nobody@example.com",
+                name = "Nobody",
+                password = "supersecret123",
+                department_id = 999999,
+            },
+            Json
+        );
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
 
     [Fact]
     public async Task Register_DuplicateEmail_Rejected()
     {
-        var payload = new { email = "bob@example.com", name = "Bob", password = "supersecret123" };
+        var payload = new
+        {
+            email = "bob@example.com",
+            name = "Bob",
+            password = "supersecret123",
+            department_id = await FirstDepartmentIdAsync(),
+        };
         await Client.PostAsJsonAsync("/api/auth/register", payload, Json);
 
         // Registering the same email twice should fail the second time.
@@ -43,7 +122,13 @@ public class AuthEndpointsTests : IntegrationTestBase
     {
         await Client.PostAsJsonAsync(
             "/api/auth/register",
-            new { email = "carol@example.com", name = "Carol", password = "supersecret123" },
+            new
+            {
+                email = "carol@example.com",
+                name = "Carol",
+                password = "supersecret123",
+                department_id = await FirstDepartmentIdAsync(),
+            },
             Json
         );
 
@@ -62,7 +147,13 @@ public class AuthEndpointsTests : IntegrationTestBase
     {
         await Client.PostAsJsonAsync(
             "/api/auth/register",
-            new { email = "dave@example.com", name = "Dave", password = "supersecret123" },
+            new
+            {
+                email = "dave@example.com",
+                name = "Dave",
+                password = "supersecret123",
+                department_id = await FirstDepartmentIdAsync(),
+            },
             Json
         );
 

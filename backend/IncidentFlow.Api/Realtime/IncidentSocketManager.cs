@@ -15,15 +15,21 @@ namespace IncidentFlow.Api.Realtime;
 // still reaches a browser connected to server B.
 public class IncidentSocketManager
 {
-    // ConcurrentDictionary has no built-in "concurrent set" partner, so we
-    // use one keyed by the socket itself with a throwaway `byte` value - the
-    // values are never read, only the keys matter.
-    private readonly ConcurrentDictionary<int, ConcurrentDictionary<WebSocket, byte>> _connections = new();
+    // Who is on the other end of one open socket. Stored alongside the
+    // connection so the server can answer "who is looking at this incident
+    // right now?" without going back to the database - the user was already
+    // loaded when the connection was authenticated.
+    public record Viewer(int UserId, string Email, string Name);
 
-    public void Connect(int incidentId, WebSocket socket)
+    // Keyed by incident id, then by socket. The inner dictionary used to hold
+    // a throwaway `byte` (it was only ever used as a set of sockets); it now
+    // holds the Viewer, which is what makes the presence list below possible.
+    private readonly ConcurrentDictionary<int, ConcurrentDictionary<WebSocket, Viewer>> _connections = new();
+
+    public void Connect(int incidentId, WebSocket socket, Viewer viewer)
     {
-        var group = _connections.GetOrAdd(incidentId, _ => new ConcurrentDictionary<WebSocket, byte>());
-        group[socket] = 0;
+        var group = _connections.GetOrAdd(incidentId, _ => new ConcurrentDictionary<WebSocket, Viewer>());
+        group[socket] = viewer;
     }
 
     public void Disconnect(int incidentId, WebSocket socket)
@@ -37,6 +43,39 @@ public class IncidentSocketManager
             }
         }
     }
+
+    // Everyone currently watching this incident, one entry per person.
+    //
+    // DistinctBy(UserId) matters: one human with the incident open in three
+    // browser tabs is three sockets but still one viewer, and "Dana, Dana,
+    // Dana" on screen would look like a bug.
+    //
+    // The honest caveat: this only knows about sockets connected to THIS
+    // server process. Every other event in the app survives multiple backend
+    // replicas because it travels through Redis (see the class comment
+    // above), but presence is held in memory here, so with two replicas each
+    // browser sees only the people who happened to land on the same one.
+    // The standard fix is to keep the viewer set in Redis instead - a set per
+    // incident, with each connection refreshing a short TTL so a crashed
+    // replica's viewers disappear on their own rather than haunting the list.
+    public IReadOnlyList<Viewer> ViewersFor(int incidentId)
+    {
+        if (!_connections.TryGetValue(incidentId, out var group)) return [];
+
+        return [.. group.Values
+            .DistinctBy(viewer => viewer.UserId)
+            .OrderBy(viewer => viewer.Name)];
+    }
+
+    // Tells everyone watching this incident who else is here. Sent on connect
+    // and on disconnect, which is enough: those are the only two moments the
+    // answer can change.
+    public Task BroadcastPresenceAsync(int incidentId) =>
+        BroadcastLocalAsync(incidentId, new
+        {
+            type = "presence_updated",
+            data = new { viewers = ViewersFor(incidentId) },
+        });
 
     // Sends one JSON message to every browser tab currently watching this
     // incident, on this server process only (see the class comment above).
